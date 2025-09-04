@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accomplishments of Higher Education 2025</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body class="p-6 bg-gray-100">
+  <style>
+    body { background-color: black; }
+
+    .cleardata::hover{
+      background-color: red;
+
+    }
+  </style>
+
+  <h1 class="text-2xl font-bold text-center mb-6 text-orange-800">
+    ACCOMPLISHMENTS OF HIGHER EDUCATION FOR 2025
+  </h1>
+
+  <!-- Input Form -->
+  <div class="bg-white shadow-md p-4 rounded-lg mb-6">
+    <h2 class="font-bold text-lg mb-2">Enter Data</h2>
+    <form id="dataForm" class="grid grid-cols-4 gap-4">
+      <div>
+        <label class="block font-semibold">Indicator</label>
+        <select id="indicator" class="w-full border p-2 rounded">
+          <option value="OC1 Licensure">OC1. Licensure</option>
+          <option value="OC2 Employability">OC2. Employability</option>
+          <option value="OP1 Enrolment">OP1. Enrolment</option>
+          <option value="OP2 Accreditation">OP2. Accreditation</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-semibold">Quarter</label>
+        <select id="quarter" class="w-full border p-2 rounded">
+          <option value="Q1">1st Quarter</option>
+          <option value="Q2">2nd Quarter</option>
+          <option value="Q3">3rd Quarter</option>
+          <option value="Q4">4th Quarter</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-semibold">Target</label>
+        <input type="number" id="target" placeholder="%" class="w-full border p-2 rounded">
+      </div>
+      <div>
+        <label class="block font-semibold">Accomplishment</label>
+        <input type="number" id="accomp" placeholder="%" class="w-full border p-2 rounded">
+      </div>
+    </form>
+    <button onclick="saveData()" class="mt-4 bg-blue-600 text-white px-4 py-2 rounded">Save</button>
+  </div>
+
+  <!-- Quarter Filter -->
+  <div class="bg-white shadow-md p-4 rounded-lg mb-6">
+    <h2 class="font-bold text-lg mb-2">Filter by Quarter</h2>
+    <select id="quarterFilter" class="w-full border p-2 rounded" onchange="applyFilter()">
+      <option value="ALL">Show All</option>
+      <option value="Q1">1st Quarter</option>
+      <option value="Q2">2nd Quarter</option>
+      <option value="Q3">3rd Quarter</option>
+      <option value="Q4">4th Quarter</option>
+    </select>
+  </div>
+
+  <!-- PDF Content Wrapper -->
+  <div id="pdfContent">
+
+    <!-- Output Table -->
+    <div id="reportSection" class="mb-6 overflow-x-auto">
+      <table class="w-full border border-gray-300 text-center bg-white">
+        <thead class="bg-blue-900 text-white">
+          <tr>
+            <th rowspan="2" class="border p-2">Outcome Indicators</th>
+            <th colspan="2" class="border p-2">1st</th>
+            <th colspan="2" class="border p-2">2nd</th>
+            <th colspan="2" class="border p-2">3rd</th>
+            <th colspan="2" class="border p-2">4th</th>
+            <th colspan="2" class="border p-2">TOTAL</th>
+          </tr>
+          <tr>
+            <th class="border p-2">T</th>
+            <th class="border p-2">A</th>
+            <th class="border p-2">T</th>
+            <th class="border p-2">A</th>
+            <th class="border p-2">T</th>
+            <th class="border p-2">A</th>
+            <th class="border p-2">T</th>
+            <th class="border p-2">A</th>
+            <th class="border p-2">T</th>
+            <th class="border p-2">A</th>
+          </tr>
+        </thead>
+        <tbody id="reportTable"></tbody>
+      </table>
+    </div>
+
+    <div class="text-center mt-4">
+  <button onclick="clearData()" class="bg-green-500 text-white px-6 py-2 rounded shadow hover-red-600">
+    Clear All Data
+  </button>
+</div>
+
+
+    <!-- Per-quarter Chart -->
+    <div class="bg-white shadow-md p-4 rounded-lg mb-6">
+      <h2 class="font-bold text-lg mb-4 text-center">Quarterly Graph</h2>
+      <canvas id="reportChart"></canvas>
+    </div>
+
+    <!-- Totals by Indicator -->
+    <div class="bg-white shadow-md p-4 rounded-lg mb-6">
+      <h2 class="font-bold text-lg mb-4 text-center">ANNUAL TOTAL</h2>
+      <canvas id="totalChart"></canvas>
+    </div>
+
+  </div> <!-- End PDF Content Wrapper -->
+
+  <!-- Download PDF Button -->
+  <div class="text-center mt-6">
+    <button onclick="downloadPDF()" class="bg-green-600 text-white px-6 py-2 rounded shadow">
+      Download PDF Report
+    </button>
+  </div>
+
+  <script>
+    let reportData = JSON.parse(localStorage.getItem("reportData")) || {};
+    let chart, totalChart;
+    let currentFilter = "ALL";
+
+    function saveData() {
+      const indicator = document.getElementById("indicator").value;
+      const quarter = document.getElementById("quarter").value;
+      const target = document.getElementById("target").value;
+      const accomp = document.getElementById("accomp").value;
+
+      if (!reportData[indicator]) reportData[indicator] = {};
+      reportData[indicator][quarter] = { target, accomp };
+
+      localStorage.setItem("reportData", JSON.stringify(reportData));
+      renderAll();
+    }
+
+    function applyFilter() {
+      currentFilter = document.getElementById("quarterFilter").value;
+      renderAll();
+    }
+
+    function renderAll() {
+      renderTable();
+      renderChart();
+      renderTotalChart();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById("reportTable");
+      tbody.innerHTML = "";
+
+      for (let ind in reportData) {
+        let row = `<tr class="border"><td class="border p-2 font-bold">${ind}</td>`;
+        let totalTarget = 0, totalAccomp = 0, count = 0;
+
+        ["Q1","Q2","Q3","Q4"].forEach(q => {
+          if (currentFilter === "ALL" || currentFilter === q) {
+            if (reportData[ind][q]) {
+              let t = parseFloat(reportData[ind][q].target) || 0;
+              let a = parseFloat(reportData[ind][q].accomp) || 0;
+              totalTarget += t; totalAccomp += a; count++;
+              row += `<td class="border p-2">${t}%</td><td class="border p-2">${a}%</td>`;
+            } else {
+              row += `<td class="border p-2">-</td><td class="border p-2">-</td>`;
+            }
+          } else {
+            row += `<td class="border p-2">-</td><td class="border p-2">-</td>`;
+          }
+        });
+
+        let avgTarget = count ? (totalTarget / count).toFixed(2) : "-";
+        let avgAccomp = count ? (totalAccomp / count).toFixed(2) : "-";
+        row += `<td class="border p-2 font-bold">${avgTarget}%</td><td class="border p-2 font-bold">${avgAccomp}%</td></tr>`;
+        tbody.innerHTML += row;
+      }
+    }
+
+    function renderChart() {
+      const ctx = document.getElementById("reportChart").getContext("2d");
+      const labels =[],targets=[],accomplishments=[],barColors=[];
+
+      for (let ind in reportData) {
+        for (let q of ["Q1","Q2","Q3","Q4"]) {
+          if (reportData[ind][q] && (currentFilter === "ALL" || currentFilter === q)) {
+            let t = parseFloat(reportData[ind][q].target) || 0;
+            let a = parseFloat(reportData[ind][q].accomp) || 0;
+            labels.push(`${ind} ${q}`);
+            targets.push(t);
+            accomplishments.push(a);
+            barColors.push(a >= t ? "green" : "red");
+          }
+        }
+      }
+
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [
+          { label:"Target (%)", data: targets, backgroundColor:"rgba(54,162,235,0.5)" },
+          { label:"Accomplishment (%)", data: accomplishments, backgroundColor: barColors }
+        ]},
+        options: {
+          responsive:true,
+          plugins:{ datalabels:{ anchor:"end", align:"end", formatter:v=>v+"%", font:{weight:"bold"} } },
+          scales:{ y:{ beginAtZero:true, max:100, ticks:{ callback:v=>v+"%" } } }
+        },
+        plugins:[ChartDataLabels]
+      });
+    }
+
+    function renderTotalChart() {
+      const ctx = document.getElementById("totalChart").getContext("2d");
+      const labels=[], totalTargets=[], totalAccomps=[], barColors=[];
+
+      for (let ind in reportData) {
+        let totalT=0, totalA=0, count=0;
+        for (let q of ["Q1","Q2","Q3","Q4"]) {
+          if (reportData[ind][q]) {
+            totalT+=parseFloat(reportData[ind][q].target)||0;
+            totalA+=parseFloat(reportData[ind][q].accomp)||0;
+            count++;
+          }
+        }
+        if (count>0) {
+          let avgT=(totalT/count).toFixed(2), avgA=(totalA/count).toFixed(2);
+          labels.push(ind); totalTargets.push(avgT); totalAccomps.push(avgA);
+          barColors.push(avgA>=avgT?"green":"red");
+        }
+      }
+
+      if (totalChart) totalChart.destroy();
+      totalChart=new Chart(ctx,{ type:"bar", data:{ labels, datasets:[
+        { label:"Target (%)", data:totalTargets, backgroundColor:"rgba(54,162,235,0.5)" },
+        { label:"Accomplishment (%)", data:totalAccomps, backgroundColor:barColors }
+      ]}, options:{ responsive:true, plugins:{ datalabels:{ anchor:"end", align:"end", formatter:v=>v+"%", font:{weight:"bold"} } }, scales:{ y:{ beginAtZero:true, max:100, ticks:{ callback:v=>v+"%" } } } }, plugins:[ChartDataLabels] });
+    }
+
+    function clearData() {
+  localStorage.removeItem("reportData");
+  reportData = {};
+  renderAll();
+}
+
+
+    async function downloadPDF() {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF("p","mm","a4");
+      pdf.setFontSize(14);
+      pdf.text("Accomplishments of Higher Education 2025", 10, 15);
+
+      // Capture the table + charts
+      const content = document.getElementById("pdfContent");
+      const canvas = await html2canvas(content, { scale: 2 });
+      const imgData = canvas.toDataURL("image/png");
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth() - 20;
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      pdf.addImage(imgData,"PNG",10,25,pdfWidth,pdfHeight);
+      pdf.save("HigherEducation_Report_2025.pdf");
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
