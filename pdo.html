@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDO Data Entry</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white p-6 rounded-xl shadow-md w-full max-w-2xl">
+    <h1 class="text-2xl font-bold text-center mb-4">📋 PDO Data Entry</h1>
+
+    <form id="dataForm" class="space-y-4">
+      <!-- Indicator -->
+      <div>
+        <label class="block text-gray-700 font-medium mb-1">Indicator</label>
+        <select id="indicator" class="w-full p-2 border rounded" required>
+          <option value="">-- Select Indicator --</option>
+          <option value="Licensure">Licensure</option>
+          <option value="Employability">Employability</option>
+          <option value="CHED-RDC">CHED-RDC</option>
+          <option value="Accreditation">Accreditation</option>
+        </select>
+      </div>
+
+      <!-- Quarter -->
+      <div>
+        <label class="block text-gray-700 font-medium mb-1">Quarter</label>
+        <select id="quarter" class="w-full p-2 border rounded" required>
+          <option value="">-- Select Quarter --</option>
+          <option value="Q1">1st Quarter</option>
+          <option value="Q2">2nd Quarter</option>
+          <option value="Q3">3rd Quarter</option>
+          <option value="Q4">4th Quarter</option>
+        </select>
+      </div>
+
+      <!-- Target & Denominator -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-gray-700 font-medium mb-1">Target (Number)</label>
+          <input type="number" id="target" placeholder="e.g., 784" class="w-full p-2 border rounded" required>
+        </div>
+        <div>
+          <label class="block text-gray-700 font-medium mb-1">Target Denominator</label>
+          <input type="number" id="targetDenom" placeholder="e.g., 980" class="w-full p-2 border rounded" required>
+        </div>
+      </div>
+
+      <!-- Accomplishment & Denominator -->
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-gray-700 font-medium mb-1">Accomplishment (Number)</label>
+          <input type="number" id="accomp" placeholder="e.g., 850" class="w-full p-2 border rounded" required>
+        </div>
+        <div>
+          <label class="block text-gray-700 font-medium mb-1">Accomplishment Denominator</label>
+          <input type="number" id="accompDenom" placeholder="e.g., 1020" class="w-full p-2 border rounded" required>
+        </div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex justify-between gap-4">
+        <button type="submit" class="w-full bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700">
+          ➕ Save Entry
+        </button>
+        <a href="game.html" class="w-full text-center bg-green-600 text-white p-2 rounded-lg hover:bg-green-700">
+          📊 View Report
+        </a>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById("dataForm");
+    form.addEventListener("submit", function(e) {
+      e.preventDefault();
+
+      const indicator = document.getElementById("indicator").value;
+      const quarter = document.getElementById("quarter").value;
+      const target = Number(document.getElementById("target").value);
+      const targetDenom = Number(document.getElementById("targetDenom").value);
+      const accomp = Number(document.getElementById("accomp").value);
+      const accompDenom = Number(document.getElementById("accompDenom").value);
+
+      let data = JSON.parse(localStorage.getItem("chedData")) || [];
+      data.push({ indicator, quarter, target, targetDenom, accomp, accompDenom });
+      localStorage.setItem("chedData", JSON.stringify(data));
+
+      alert("✅ Entry saved! You can now view the report.");
+      form.reset();
+    });
+  </script>
+</body>
+</html>

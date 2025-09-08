@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CHED Report — Improved (Single Chart)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Chart.js and DataLabels -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+
+<!-- html2canvas + jsPDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  canvas { max-height: 360px; }
+  .small { font-size: 0.85rem; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen p-6 text-slate-800">
+  <main class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold text-center mb-4">ACCOMPLISHMENT OF HIGHER EDUCATION — 2025</h1>
+
+    <div class="flex flex-wrap gap-3 justify-center mb-4">
+      <button id="backBtn" class="bg-gray-600 text-white px-3 py-2 rounded" aria-label="Back">⬅ Back</button>
+      <button id="downloadPDF" class="bg-blue-600 text-white px-3 py-2 rounded" aria-label="Download PDF">📥 Download PDF</button>
+      <button id="clearData" class="bg-red-600 text-white px-3 py-2 rounded">🗑 Clear All</button>
+      <div id="status" class="text-sm text-slate-600 ml-2 self-center">No data</div>
+    </div>
+
+    <!-- Table -->
+    <section id="reportContent" class="bg-white p-6 rounded-xl shadow mb-6">
+      <div class="overflow-x-auto">
+        <table class="w-full border text-sm text-center">
+          <thead class="bg-slate-100">
+            <tr>
+              <th class="p-2 border">Indicator</th>
+              <th class="p-2 border">Q1</th>
+              <th class="p-2 border">Q2</th>
+              <th class="p-2 border">Q3</th>
+              <th class="p-2 border">Q4</th>
+              <th class="p-2 border">Total</th>
+              <th class="p-2 border">Percentage (%)</th>
+            </tr>
+          </thead>
+          <tbody id="reportTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Single Chart with Selector -->
+   <!-- Single Chart with Selector -->
+<section class="bg-white p-4 rounded-xl shadow mb-6">
+  <div class="flex flex-col items-center mb-4">
+    <label for="chartSelector" class="text-lg font-semibold mb-2 flex items-center">
+      📊 Select Report View:
+    </label>
+    <select id="chartSelector" 
+      class="px-5 py-3 text-white bg-indigo-600 rounded-lg shadow-md font-semibold text-base hover:bg-indigo-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-400">
+      <option value="overall">Overall Performance</option>
+      <option value="Q1">Quarter 1</option>
+      <option value="Q2">Quarter 2</option>
+      <option value="Q3">Quarter 3</option>
+      <option value="Q4">Quarter 4</option>
+    </select>
+  </div>
+  <div style="height:360px;">
+    <canvas id="dynamicChart" aria-label="Performance chart" role="img"></canvas>
+  </div>
+</section>
+
+  </main>
+
+<script>
+/* =========================================================
+   CHED Report - Single Chart version (STRICT update)
+   - Only change from master: show num/denom (xx.x%) in each quarter cell.
+   - All other logic retained exactly.
+   ========================================================= */
+
+Chart.register(ChartDataLabels);
+
+const STORAGE_KEY = 'chedData';
+const DEFAULT_INDICATORS = ["Licensure","Employability","CHED-RDC","Accreditation"];
+const DEFAULT_SETTINGS = { tolerance: 0.5, decimals: 1, chartMaxY: 120 };
+
+let entries = [];
+let matrix = {};
+let settings = DEFAULT_SETTINGS;
+let dynamicChart = null;
+
+// DOM refs
+const reportTable = document.getElementById('reportTable');
+const statusEl = document.getElementById('status');
+const downloadPDFBtn = document.getElementById('downloadPDF');
+const clearDataBtn = document.getElementById('clearData');
+const chartSelector = document.getElementById('chartSelector');
+const backBtn = document.getElementById('backBtn');
+
+// helpers
+const uid = ()=> Date.now() + Math.floor(Math.random()*999);
+const safeParse = (s)=> { try { return JSON.parse(s); } catch(e) { return null; } };
+const showStatus = (t)=> { statusEl.innerText = t; };
+
+// load/save
+function loadEntries() { entries = safeParse(localStorage.getItem(STORAGE_KEY)) || []; return entries; }
+function saveEntries() { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); }
+
+// compute total denom (auto/constant/sum logic simplified to match previous)
+function computeTotalDenom(denomsObj, mode='auto') {
+  const vals = ['Q1','Q2','Q3','Q4'].map(q=>Number(denomsObj[q]||0)).filter(v=>v>0);
+  if (!vals.length) return 0;
+  if (mode === 'sum' || (mode === 'auto' && !vals.every(v=>v===vals[0]))) return vals.reduce((a,b)=>a+b,0);
+  if (mode === 'constant' || (mode === 'auto' && vals.every(v=>v===vals[0]))) return vals[0];
+  if (mode === 'max') return Math.max(...vals);
+  if (mode === 'average') return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
+  return vals.reduce((a,b)=>a+b,0);
+}
+
+// build matrix from entries
+function buildMatrix() {
+  matrix = {};
+  DEFAULT_INDICATORS.forEach(ind => {
+    matrix[ind] = {
+      targets: {Q1:0,Q2:0,Q3:0,Q4:0},
+      targetDenoms: {Q1:0,Q2:0,Q3:0,Q4:0},
+      accomps: {Q1:0,Q2:0,Q3:0,Q4:0},
+      accompDenoms: {Q1:0,Q2:0,Q3:0,Q4:0}
+    };
+  });
+  entries.forEach(e => {
+    if (!matrix[e.indicator]) {
+      matrix[e.indicator] = {
+        targets:{Q1:0,Q2:0,Q3:0,Q4:0},
+        targetDenoms:{Q1:0,Q2:0,Q3:0,Q4:0},
+        accomps:{Q1:0,Q2:0,Q3:0,Q4:0},
+        accompDenoms:{Q1:0,Q2:0,Q3:0,Q4:0}
+      };
+    }
+    matrix[e.indicator].targets[e.quarter] = Number(e.target)||0;
+    matrix[e.indicator].targetDenoms[e.quarter] = Number(e.targetDenom)||0;
+    matrix[e.indicator].accomps[e.quarter] = Number(e.accomp)||0;
+    matrix[e.indicator].accompDenoms[e.quarter] = Number(e.accompDenom)||0;
+  });
+  return matrix;
+}
+
+// render table & prepare chart data
+function renderReport() {
+  reportTable.innerHTML = '';
+  const labels = [];
+  const overallTargets = [], overallAccomps = [];
+  const quarterlyTargets = {Q1:[],Q2:[],Q3:[],Q4:[]}, quarterlyAccomps = {Q1:[],Q2:[],Q3:[],Q4:[]};
+
+  const inds = Object.keys(matrix).length ? Object.keys(matrix) : DEFAULT_INDICATORS;
+  inds.forEach(ind => {
+    const t = matrix[ind];
+    const totalTarget = t.targets.Q1 + t.targets.Q2 + t.targets.Q3 + t.targets.Q4;
+    const totalAccomp = t.accomps.Q1 + t.accomps.Q2 + t.accomps.Q3 + t.accomps.Q4;
+    const totalTargetDenom = computeTotalDenom(t.targetDenoms);
+    const totalAccompDenom = computeTotalDenom(t.accompDenoms);
+
+    const overallTargetPct = totalTargetDenom ? (totalTarget/totalTargetDenom*100) : null;
+    const overallAccompPct = totalAccompDenom ? (totalAccomp/totalAccompDenom*100) : null;
+
+    const dispTargetPct = overallTargetPct==null ? '-' : overallTargetPct.toFixed(settings.decimals)+'%';
+    const dispAccompPct = overallAccompPct==null ? '-' : overallAccompPct.toFixed(settings.decimals)+'%';
+
+    // header
+    const header = document.createElement('tr');
+    header.className = 'bg-slate-100 font-semibold';
+    header.innerHTML = `<td class="p-2" colspan="7">${ind}</td>`;
+    reportTable.appendChild(header);
+
+    // compute per-quarter strings (num/denom (pct))
+    const qCellsTarget = {};
+    const qCellsAccomp = {};
+    ['Q1','Q2','Q3','Q4'].forEach(q => {
+      const numT = t.targets[q] || 0;
+      const denT = (t.targetDenoms[q] || 0) || 0;
+      const pctT = denT ? (numT / denT * 100).toFixed(settings.decimals) + '%' : '-';
+      qCellsTarget[q] = `${numT}/${t.targetDenoms[q] || '-'} (${pctT})`;
+
+      const numA = t.accomps[q] || 0;
+      const denA = (t.accompDenoms[q] || 0) || 0;
+      const pctA = denA ? (numA / denA * 100).toFixed(settings.decimals) + '%' : '-';
+      qCellsAccomp[q] = `${numA}/${t.accompDenoms[q] || '-'} (${pctA})`;
+    });
+
+    // target row (modified cells to include percentage)
+    const trT = document.createElement('tr'); trT.className='bg-white';
+    trT.innerHTML = `
+      <td class="border p-2">Target</td>
+      <td class="border p-2">${qCellsTarget.Q1}</td>
+      <td class="border p-2">${qCellsTarget.Q2}</td>
+      <td class="border p-2">${qCellsTarget.Q3}</td>
+      <td class="border p-2">${qCellsTarget.Q4}</td>
+      <td class="border p-2">${totalTarget}/${totalTargetDenom || '-'}</td>
+      <td class="border p-2 font-semibold">${dispTargetPct}</td>
+    `;
+    reportTable.appendChild(trT);
+
+    // accom row (modified cells to include percentage)
+    const trA = document.createElement('tr');
+    const totalAccompClass = totalAccomp < totalTarget ? 'text-red-600' : 'text-green-600';
+    const overallClass = (overallAccompPct != null && overallTargetPct != null && (overallAccompPct + settings.tolerance >= overallTargetPct)) ? 'text-green-600' : 'text-red-600';
+    trA.innerHTML = `
+      <td class="border p-2">Accomplishment</td>
+      <td class="border p-2 ${t.accomps.Q1 < t.targets.Q1 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q1}</td>
+      <td class="border p-2 ${t.accomps.Q2 < t.targets.Q2 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q2}</td>
+      <td class="border p-2 ${t.accomps.Q3 < t.targets.Q3 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q3}</td>
+      <td class="border p-2 ${t.accomps.Q4 < t.targets.Q4 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q4}</td>
+      <td class="border p-2 font-bold ${totalAccompClass}">${totalAccomp}/${totalAccompDenom || '-'}</td>
+      <td class="border p-2 font-bold ${overallClass}">${dispAccompPct}</td>
+    `;
+    reportTable.appendChild(trA);
+
+    // push chart arrays
+    labels.push(ind);
+    overallTargets.push(overallTargetPct == null ? 0 : Number(overallTargetPct.toFixed(settings.decimals+1)));
+    overallAccomps.push(overallAccompPct == null ? 0 : Number(overallAccompPct.toFixed(settings.decimals+1)));
+
+    ['Q1','Q2','Q3','Q4'].forEach(q => {
+      const tq = t.targetDenoms[q] ? (t.targets[q]/t.targetDenoms[q]*100) : 0;
+      const aq = t.accompDenoms[q] ? (t.accomps[q]/t.accompDenoms[q]*100) : 0;
+      quarterlyTargets[q].push(Number(tq.toFixed(settings.decimals+1)));
+      quarterlyAccomps[q].push(Number(aq.toFixed(settings.decimals+1)));
+    });
+  });
+
+  matrix._chartData = { labels, overallTargets, overallAccomps, quarterlyTargets, quarterlyAccomps };
+
+  showStatus(entries.length ? `${entries.length} row(s)` : 'No data');
+}
+
+// Chart options
+function baseChartOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position:'top' },
+      tooltip: { enabled: true },
+      datalabels: { display: false }
+    },
+    scales: {
+      x: { ticks: { maxRotation:0, minRotation:0, autoSkip:false } },
+      y: { beginAtZero:true, max: settings.chartMaxY, ticks: { callback: v => v + '%' } }
+    }
+  };
+}
+
+// Improved dual labels plugin
+const dualLabelsPlugin = {
+  id: 'dualLabels',
+  afterDatasetsDraw(chart) {
+    const ctx = chart.ctx;
+    ctx.save();
+    const decimals = settings.decimals;
+
+    chart.data.datasets.forEach((ds, dsIndex) => {
+      const meta = chart.getDatasetMeta(dsIndex);
+      if (!meta || !meta.data) return;
+      meta.data.forEach((bar, i) => {
+        const dataVal = ds.data[i];
+        if (dataVal == null) return;
+
+        // raw text (dataset.rawData supplied when rendering)
+        const rawStr = (ds.rawData && ds.rawData[i]) ? ds.rawData[i] : '';
+
+        // compute percentage text from rawStr when possible, else fallback
+        const pctText = (() => {
+          if (rawStr && rawStr.includes('/')) {
+            const parts = rawStr.split('/');
+            const num = Number(parts[0]) || 0;
+            const den = Number(parts[1]) || 0;
+            return den ? (num/den*100).toFixed(decimals) + '%' : '-';
+          }
+          return (typeof dataVal === 'number') ? Number(dataVal).toFixed(decimals) + '%' : String(dataVal);
+        })();
+
+        const pos = (typeof bar.tooltipPosition === 'function') ? bar.tooltipPosition() : { x: bar.x || 0, y: bar.y || 0 };
+
+        // draw percentage above
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillStyle = '#000';
+        ctx.fillText(pctText, pos.x, pos.y - 10);
+
+        // measure bar height to decide raw placement
+        let baseY = pos.y + 20;
+        try {
+          baseY = chart.scales.y.getPixelForValue(0);
+        } catch(e) { /* ignore */ }
+        const barHeight = Math.abs(baseY - pos.y);
+
+        // draw raw value inside if tall enough, otherwise below
+        if (rawStr) {
+          if (barHeight > 28) {
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px sans-serif';
+            ctx.fillText(rawStr, pos.x, pos.y + (barHeight/2) + 6);
+          } else {
+            ctx.fillStyle = '#222';
+            ctx.font = '10px sans-serif';
+            ctx.fillText(rawStr, pos.x, pos.y + 14);
+          }
+        }
+      });
+    });
+
+    ctx.restore();
+  }
+};
+
+// render a Chart instance given context & prepared arrays
+function renderChartInstance(ctx, labels, targetArr, accompArr, accompColors, rawTargetData, rawAccompData) {
+  const data = {
+    labels,
+    datasets: [
+      { label: 'Target %', data: targetArr, backgroundColor: 'rgba(30,64,175,0.9)', rawData: rawTargetData || [] },
+      { label: 'Accomplishment %', data: accompArr, backgroundColor: accompColors, rawData: rawAccompData || [] }
+    ]
+  };
+  const cfg = { type: 'bar', data, options: baseChartOptions(), plugins: [dualLabelsPlugin] };
+  return new Chart(ctx, cfg);
+}
+
+// render dynamic chart
+function renderDynamicChart(view) {
+  if (!matrix._chartData) return;
+  const labels = matrix._chartData.labels;
+  let tData, aData;
+  if (view === 'overall') {
+    tData = matrix._chartData.overallTargets;
+    aData = matrix._chartData.overallAccomps;
+  } else {
+    tData = matrix._chartData.quarterlyTargets[view];
+    aData = matrix._chartData.quarterlyAccomps[view];
+  }
+
+  const colors = aData.map((v,i) => (v + settings.tolerance >= (tData[i]||0)) ? 'rgba(34,197,94,0.85)' : 'rgba(239,68,68,0.85)');
+
+  const rawTarget = matrix._chartData.labels.map(ind => {
+    const m = matrix[ind];
+    if (!m) return '-';
+    if (view === 'overall') {
+      const num = m.targets.Q1 + m.targets.Q2 + m.targets.Q3 + m.targets.Q4;
+      const den = computeTotalDenom(m.targetDenoms);
+      return `${num}/${den||'-'}`;
+    } else {
+      const num = m.targets[view] || 0;
+      const den = m.targetDenoms[view] || '-';
+      return `${num}/${den}`;
+    }
+  });
+
+  const rawAccomp = matrix._chartData.labels.map(ind => {
+    const m = matrix[ind];
+    if (!m) return '-';
+    if (view === 'overall') {
+      const num = m.accomps.Q1 + m.accomps.Q2 + m.accomps.Q3 + m.accomps.Q4;
+      const den = computeTotalDenom(m.accompDenoms);
+      return `${num}/${den||'-'}`;
+    } else {
+      const num = m.accomps[view] || 0;
+      const den = m.accompDenoms[view] || '-';
+      return `${num}/${den}`;
+    }
+  });
+
+  // destroy previous
+  if (dynamicChart) {
+    try { dynamicChart.destroy(); } catch(e) { /* ignore */ }
+    dynamicChart = null;
+  }
+
+  const ctx = document.getElementById('dynamicChart').getContext('2d');
+  dynamicChart = renderChartInstance(ctx, labels, tData, aData, colors, rawTarget, rawAccomp);
+}
+
+// PDF export
+// PDF export (all views)
+async function exportPDF() {
+  if (!entries.length) { alert('No data to export'); return; }
+  downloadPDFBtn.disabled = true;
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p','mm','a4');
+    const pdfWidth = doc.internal.pageSize.getWidth();
+
+    // --- Page 1: Table + Overall Chart ---
+    const tableEl = document.getElementById('reportContent');
+    const tableCanvas = await html2canvas(tableEl, { scale: 2 });
+    const tableImg = tableCanvas.toDataURL('image/png');
+    const tableProps = doc.getImageProperties(tableImg);
+    const tableHeight = (tableProps.height * pdfWidth) / tableProps.width;
+    doc.addImage(tableImg, 'PNG', 0, 0, pdfWidth, tableHeight);
+
+    // Overall chart below the table
+    renderDynamicChart('overall');
+    await new Promise(r => setTimeout(r, 400));
+    const chartEl = document.getElementById('dynamicChart').parentNode;
+    const chartCanvas = await html2canvas(chartEl, { scale: 2 });
+    const chartImg = chartCanvas.toDataURL('image/png');
+    const chartProps = doc.getImageProperties(chartImg);
+    const chartHeight = (chartProps.height * pdfWidth) / chartProps.width;
+
+    doc.addImage(chartImg, 'PNG', 0, tableHeight + 10, pdfWidth, chartHeight);
+
+    doc.setFontSize(9);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 10, doc.internal.pageSize.getHeight()-8);
+
+    // --- Page 2: Q1–Q4 charts stacked vertically ---
+    doc.addPage();
+    const views = ['Q1','Q2','Q3','Q4'];
+    let currentY = 0;
+    for (let i = 0; i < views.length; i++) {
+      renderDynamicChart(views[i]);
+      await new Promise(r => setTimeout(r, 400));
+      const chEl = document.getElementById('dynamicChart').parentNode;
+      const chCanvas = await html2canvas(chEl, { scale: 2 });
+      const chImg = chCanvas.toDataURL('image/png');
+      const chProps = doc.getImageProperties(chImg);
+      const chHeight = (chProps.height * pdfWidth) / chProps.width;
+
+      // Add title for each quarter
+      doc.setFontSize(11);
+      doc.text(`Quarter ${views[i].replace('Q','')}`, 10, currentY + 12);
+
+      // Add chart image
+      doc.addImage(chImg, 'PNG', 0, currentY + 15, pdfWidth, chHeight);
+
+      currentY += chHeight + 15; // space between charts
+
+      // Add new page if not enough space
+      if (i < views.length - 1 && currentY + chHeight > doc.internal.pageSize.getHeight() - 10) {
+        doc.addPage();
+        currentY = 0;
+      }
+    }
+
+    doc.save(`CHED_Report_${new Date().toISOString().slice(0,10)}.pdf`);
+
+  } catch (e) {
+    console.error(e);
+    alert('PDF export failed');
+  } finally {
+    refreshAll(); // restore chart view
+    downloadPDFBtn.disabled = false;
+  }
+}
+
+
+// Clear all data
+function clearAll() {
+  if (!confirm('Remove all data?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  entries = [];
+  saveEntries();
+  refreshAll();
+}
+
+// refresh pipeline
+function refreshAll() {
+  loadEntries();
+  buildMatrix();
+  renderReport();
+  renderDynamicChart(chartSelector.value || 'overall');
+}
+
+// wire events
+chartSelector.addEventListener('change', e => renderDynamicChart(e.target.value));
+downloadPDFBtn.addEventListener('click', exportPDF);
+clearDataBtn.addEventListener('click', clearAll);
+backBtn.addEventListener('click', ()=> { window.location.href = 'pdo.html'; });
+
+// initial
+refreshAll();
+
+</script>
+</body>
+</html>
