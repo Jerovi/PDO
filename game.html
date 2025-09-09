@@ -277,7 +277,42 @@ function refreshAll() {
 
 function clearAll(){ if(!confirm('Remove all data?'))return; localStorage.removeItem(STORAGE_KEY); entries=[]; saveEntries(); refreshAll(); }
 
-async function exportPDF(){ alert('PDF export not included in this snippet for brevity'); }
+async function exportPDF() {
+  const { jsPDF } = window.jspdf;
+
+  // Create a new jsPDF instance
+  const pdf = new jsPDF('p', 'pt', 'a4');
+  const reportContent = document.getElementById('reportContent');
+  const chartCanvas = document.getElementById('dynamicChart');
+
+  // Capture the table
+  const tableCanvas = await html2canvas(reportContent, { scale: 2 });
+  const tableImg = tableCanvas.toDataURL('image/png');
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  let y = 20; // top margin
+  pdf.text("Accomplishment of Higher Education — 2025", pageWidth / 2, y, { align: 'center' });
+  y += 30;
+  const tableWidth = pageWidth - 40; // side margins
+  const tableHeight = (tableCanvas.height / tableCanvas.width) * tableWidth;
+  pdf.addImage(tableImg, 'PNG', 20, y, tableWidth, tableHeight);
+
+  // Capture the chart
+  const chartCanvasImg = await html2canvas(chartCanvas, { scale: 2 });
+  const chartImg = chartCanvasImg.toDataURL('image/png');
+  y += tableHeight + 20;
+  const chartHeight = (chartCanvasImg.height / chartCanvasImg.width) * tableWidth;
+
+  // Add new page if chart doesn't fit
+  if (y + chartHeight > pdf.internal.pageSize.getHeight()) {
+    pdf.addPage();
+    y = 20;
+  }
+  pdf.addImage(chartImg, 'PNG', 20, y, tableWidth, chartHeight);
+
+  // Save the PDF
+  pdf.save('CHED_Report_2025.pdf');
+}
+
 
 chartSelector.addEventListener('change', e=>renderDynamicChart(e.target.value));
 downloadPDFBtn.addEventListener('click', exportPDF);
