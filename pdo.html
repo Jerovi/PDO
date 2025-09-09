@@ -10,16 +10,23 @@
   <div class="bg-white p-6 rounded-xl shadow-md w-full max-w-2xl">
     <h1 class="text-2xl font-bold text-center mb-4">📋 PDO Data Entry</h1>
 
-    <form id="dataForm" class="space-y-4">
+    <!-- Category -->
+    <div>
+      <label class="block text-gray-700 font-medium mb-1">Category</label>
+      <select id="category" class="w-full p-2 border rounded" required>
+        <option value="">-- Select Category --</option>
+        <option value="Higher Education">Higher Education</option>
+        <option value="Research Program">Research Program</option>
+        <option value="Extension Services">Extension Services</option>
+      </select>
+    </div>
+
+    <form id="dataForm" class="space-y-4 mt-4">
       <!-- Indicator -->
       <div>
         <label class="block text-gray-700 font-medium mb-1">Indicator</label>
         <select id="indicator" class="w-full p-2 border rounded" required>
           <option value="">-- Select Indicator --</option>
-          <option value="Licensure">Licensure</option>
-          <option value="Employability">Employability</option>
-          <option value="CHED-RDC">CHED-RDC</option>
-          <option value="Accreditation">Accreditation</option>
         </select>
       </div>
 
@@ -72,23 +79,53 @@
   </div>
 
   <script>
+    const INDICATORS_BY_CATEGORY = {
+      "Higher Education": ["Licensure", "Employability", "CHED-RDC", "Accreditation"],
+      "Research Program": ["OC1-Research Utilization", "OP1-Complete Research", "OP2-Research Publish"],
+      "Extension Services": ["OC1-Number of Active Partnership", "OP1-Number of Trainees", "OP2-Number of Extension Programs", "OP3-Satisfactory Rating"]
+    };
+
+    const categoryEl = document.getElementById("category");
+    const indicatorEl = document.getElementById("indicator");
     const form = document.getElementById("dataForm");
+
+    // Populate indicators based on selected category
+    categoryEl.addEventListener("change", () => {
+      const category = categoryEl.value;
+      indicatorEl.innerHTML = '<option value="">-- Select Indicator --</option>';
+      if (category && INDICATORS_BY_CATEGORY[category]) {
+        INDICATORS_BY_CATEGORY[category].forEach(ind => {
+          const opt = document.createElement("option");
+          opt.value = ind;
+          opt.textContent = ind;
+          indicatorEl.appendChild(opt);
+        });
+      }
+    });
+
+    // Save entry
     form.addEventListener("submit", function(e) {
       e.preventDefault();
-
-      const indicator = document.getElementById("indicator").value;
+      const category = categoryEl.value;
+      const indicator = indicatorEl.value;
       const quarter = document.getElementById("quarter").value;
       const target = Number(document.getElementById("target").value);
       const targetDenom = Number(document.getElementById("targetDenom").value);
       const accomp = Number(document.getElementById("accomp").value);
       const accompDenom = Number(document.getElementById("accompDenom").value);
 
+      if (!category || !indicator) {
+        alert("⚠ Please select category and indicator.");
+        return;
+      }
+
       let data = JSON.parse(localStorage.getItem("chedData")) || [];
-      data.push({ indicator, quarter, target, targetDenom, accomp, accompDenom });
+      data.push({ category, indicator, quarter, target, targetDenom, accomp, accompDenom });
       localStorage.setItem("chedData", JSON.stringify(data));
 
       alert("✅ Entry saved! You can now view the report.");
       form.reset();
+      indicatorEl.innerHTML = '<option value="">-- Select Indicator --</option>';
     });
   </script>
 </body>
