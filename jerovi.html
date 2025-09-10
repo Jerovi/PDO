@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CHED Report — Improved (Single Chart)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Chart.js and DataLabels -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+
+<style>
+  canvas { max-height: 360px; }
+  .small { font-size: 0.85rem; display:block; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen p-6 text-slate-800">
+<main class="max-w-6xl mx-auto">
+  <h1 class="text-3xl font-bold text-center mb-4">PERFORMANCE REVIEW REPORT</h1>
+
+  <div class="flex flex-wrap gap-3 justify-center mb-4">
+    <button id="backBtn" class="bg-gray-600 text-white px-3 py-2 rounded">⬅ Back</button>
+    <button id="downloadPDF" class="bg-blue-600 text-white px-3 py-2 rounded">📥 Download PDF</button>
+    <button id="clearData" class="bg-red-600 text-white px-3 py-2 rounded">🗑 Clear All</button>
+    <div id="status" class="text-sm text-slate-600 ml-2 self-center">No data</div>
+  </div>
+
+  <!-- Category selector -->
+  <div class="flex flex-col items-center mb-4">
+    <label for="categorySelector" class="text-lg font-semibold mb-2 flex items-center">
+      🎯 Select Category:
+    </label>
+    <select id="categorySelector" 
+      class="px-5 py-3 text-white bg-teal-600 rounded-lg shadow-md font-semibold text-base hover:bg-teal-700 transition focus:outline-none focus:ring-2 focus:ring-teal-400">
+      <option value="all">All Categories</option>
+      <option value="Higher Education">Higher Education</option>
+      <option value="Research Program">Research Program</option>
+      <option value="Extension Services">Extension Services</option>
+    </select>
+  </div>
+
+  <!-- Table -->
+  <section id="reportContent" class="bg-white p-6 rounded-xl shadow mb-6">
+    <div class="overflow-x-auto">
+      <table class="w-full border text-sm text-center">
+        <thead class="bg-slate-100">
+          <tr>
+            <th class="p-2 border">Indicator</th>
+            <th class="p-2 border">Q1</th>
+            <th class="p-2 border">Q2</th>
+            <th class="p-2 border">Q3</th>
+            <th class="p-2 border">Q4</th>
+            <th class="p-2 border">Total</th>
+            <th class="p-2 border">Overall</th>
+          </tr>
+        </thead>
+        <tbody id="reportTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Chart -->
+  <section class="bg-white p-4 rounded-xl shadow mb-6">
+    <div class="flex flex-col items-center mb-4">
+      <label for="chartSelector" class="text-lg font-semibold mb-2 flex items-center">
+        📊 Select Report View:
+      </label>
+      <select id="chartSelector" 
+        class="px-5 py-3 text-white bg-indigo-600 rounded-lg shadow-md font-semibold text-base hover:bg-indigo-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <option value="overall">Overall Performance</option>
+        <option value="Q1">Quarter 1</option>
+        <option value="Q2">Quarter 2</option>
+        <option value="Q3">Quarter 3</option>
+        <option value="Q4">Quarter 4</option>
+      </select>
+    </div>
+    <div style="height:360px;">
+      <canvas id="dynamicChart" aria-label="Performance chart" role="img"></canvas>
+    </div>
+  </section>
+</main>
+
+<script>
+Chart.register(ChartDataLabels);
+
+const STORAGE_KEY = 'chedData';
+const INDICATORS_BY_CATEGORY = {
+  "Higher Education": ["Licensure", "Employability", "CHED-RDC", "Accreditation"],
+  "Research Program": ["OC1-Research Utilization","OP1-Complete Research","OP2-Research Publish"],
+  "Extension Services": ["OC1-Number of Active Partnership","OP1-Number of Trainees","OP2-Number of Extension Programs","OP3-Satisfactory Rating"]
+};
+const DEFAULT_SETTINGS = { decimals: 1 };
+
+let entries = [];
+let matrix = {};
+let settings = DEFAULT_SETTINGS;
+let dynamicChart = null;
+
+const reportTable = document.getElementById('reportTable');
+const statusEl = document.getElementById('status');
+const chartSelector = document.getElementById('chartSelector');
+const categorySelector = document.getElementById('categorySelector');
+
+let selectedCategory = localStorage.getItem("lastCategory") || 'all';
+categorySelector.value = selectedCategory;
+
+const safeParse = s => { try { return JSON.parse(s); } catch(e) { return []; } };
+const showStatus = t => { statusEl.innerHTML = t; };
+
+function loadEntries() { entries = safeParse(localStorage.getItem(STORAGE_KEY)); return entries; }
+function saveEntries() { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); }
+
+function buildMatrix() {
+  matrix = {};
+  const indicators = selectedCategory === "all" 
+    ? Object.values(INDICATORS_BY_CATEGORY).flat() 
+    : INDICATORS_BY_CATEGORY[selectedCategory] || [];
+  
+  indicators.forEach(ind => { matrix[ind] = {Q1:{}, Q2:{}, Q3:{}, Q4:{}}; });
+
+  entries.filter(e => selectedCategory === 'all' || e.category === selectedCategory).forEach(e => {
+    if (!matrix[e.indicator]) matrix[e.indicator] = {Q1:{}, Q2:{}, Q3:{}, Q4:{}};
+    matrix[e.indicator][e.quarter] = {
+      target: e.targetWhole && e.targetWhole > 0 ? e.targetWhole : (e.target + "/" + e.targetDenom),
+      accomp: e.accompWhole && e.accompWhole > 0 ? e.accompWhole : (e.accomp + "/" + e.accompDenom)
+    };
+  });
+
+  return matrix;
+}
+
+function formatValue(val){
+  if(typeof val==="string" && val.includes("/")){
+    const [num, den] = val.split("/").map(Number);
+    if(den>0){
+      const pct = (num/den*100).toFixed(settings.decimals)+"%";
+      return `${pct}<br><span class="small">(${num}/${den})</span>`;
+    }
+    return "-";
+  }
+  if(!isNaN(val)) return val;
+  return "-";
+}
+
+function computeTotal(values){
+  if(!values.length) return "-";
+  if(typeof values[0]==="string" && values[0].includes("/")){
+    const nums = values.map(v=>{const [n,d]=v.split("/").map(Number); return d>0?n/d*100:0;});
+    const avg = nums.reduce((a,b)=>a+b,0)/nums.length;
+    return avg.toFixed(settings.decimals)+"%";
+  } else {
+    return values.map(Number).reduce((a,b)=>a+b,0);
+  }
+}
+
+function renderReport() {
+  reportTable.innerHTML = '';
+  const inds = Object.keys(matrix);
+
+  inds.forEach(ind => {
+    const t = matrix[ind];
+    const valuesTarget = ['Q1','Q2','Q3','Q4'].map(q=>t[q].target).filter(v=>v);
+    const valuesAccomp = ['Q1','Q2','Q3','Q4'].map(q=>t[q].accomp).filter(v=>v);
+
+    const totalTarget = computeTotal(valuesTarget);
+    const totalAccomp = computeTotal(valuesAccomp);
+
+    const header = document.createElement('tr');
+    header.className='bg-slate-100 font-semibold';
+    header.innerHTML = `<td class="p-2" colspan="7">${ind}</td>`;
+    reportTable.appendChild(header);
+
+    const trT = document.createElement('tr');
+    trT.innerHTML=`
+      <td class="border p-2">Target</td>
+      <td class="border p-2">${formatValue(t.Q1.target)}</td>
+      <td class="border p-2">${formatValue(t.Q2.target)}</td>
+      <td class="border p-2">${formatValue(t.Q3.target)}</td>
+      <td class="border p-2">${formatValue(t.Q4.target)}</td>
+      <td class="border p-2">${totalTarget}</td>
+      <td class="border p-2">${totalTarget}</td>
+    `;
+    reportTable.appendChild(trT);
+
+    const trA = document.createElement('tr');
+    trA.innerHTML=`
+      <td class="border p-2">Accomplishment</td>
+      <td class="border p-2">${formatValue(t.Q1.accomp)}</td>
+      <td class="border p-2">${formatValue(t.Q2.accomp)}</td>
+      <td class="border p-2">${formatValue(t.Q3.accomp)}</td>
+      <td class="border p-2">${formatValue(t.Q4.accomp)}</td>
+      <td class="border p-2">${totalAccomp}</td>
+      <td class="border p-2">${totalAccomp}</td>
+    `;
+    reportTable.appendChild(trA);
+  });
+
+  showStatus(entries.length?`${entries.length} row(s)`:'No data');
+}
+
+function renderChart(view='overall') {
+  if(dynamicChart){ dynamicChart.destroy(); dynamicChart=null; }
+
+  const ctx = document.getElementById('dynamicChart').getContext('2d');
+  const labels = Object.keys(matrix);
+  const datasets = [];
+  const quarters = ['Q1','Q2','Q3','Q4'];
+
+  if(view==='overall'){
+    const targetData=[], accomData=[], colors=[];
+    labels.forEach(ind=>{
+      const t=matrix[ind];
+      let totalTarget = computeTotal(['Q1','Q2','Q3','Q4'].map(q=>t[q].target).filter(v=>v));
+      let totalAccomp = computeTotal(['Q1','Q2','Q3','Q4'].map(q=>t[q].accomp).filter(v=>v));
+
+      let tVal = typeof totalTarget==="string" && totalTarget.includes("%") ? parseFloat(totalTarget) : Number(totalTarget);
+      let aVal = typeof totalAccomp==="string" && totalAccomp.includes("%") ? parseFloat(totalAccomp) : Number(totalAccomp);
+
+      targetData.push(tVal);
+      accomData.push(aVal);
+      colors.push(aVal>=tVal ? "rgba(34,197,94,0.85)" : "rgba(239,68,68,0.85)");
+    });
+
+    datasets.push({label:'Target', data:targetData, backgroundColor:'rgba(30,64,175,0.9)'});
+    datasets.push({label:'Accomplishment', data:accomData, backgroundColor:colors});
+  } else {
+    // individual quarter
+    const data=[], colors=[];
+    labels.forEach(ind=>{
+      const t=matrix[ind];
+      const target=t[view]?.target || 0;
+      const accomp=t[view]?.accomp || 0;
+      const tVal = typeof target==="string" && target.includes("%") ? parseFloat(target) : Number(target);
+      const aVal = typeof accomp==="string" && accomp.includes("%") ? parseFloat(accomp) : Number(accomp);
+      data.push(aVal);
+      colors.push(aVal>=tVal ? "rgba(34,197,94,0.85)" : "rgba(239,68,68,0.85)");
+    });
+    datasets.push({label:view, data:data, backgroundColor:colors});
+  }
+
+  dynamicChart = new Chart(ctx, {
+    type:'bar',
+    data:{labels:labels, datasets:datasets},
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'top'},
+        datalabels:{
+          display:true,
+          color:'black',
+          font:{weight:'bold'},
+          formatter:(val, context)=>{
+            const ind=Object.values(matrix)[context.dataIndex];
+            let raw="";
+            if(view==='overall'){
+              const quartersData=['Q1','Q2','Q3','Q4'].map(q=>ind[q].accomp).filter(v=>v);
+              raw=quartersData[0]||val;
+            } else {
+              raw = ind[view]?.accomp || val;
+            }
+            if(typeof raw==="string" && raw.includes("/")){
+              const [num, den] = raw.split("/").map(Number);
+              return `${val.toFixed(settings.decimals)}%\n(${num}/${den})`;
+            }
+            return val;
+          }
+        }
+      },
+      scales:{y:{beginAtZero:true}}
+    },
+    plugins:[ChartDataLabels]
+  });
+}
+
+function refreshAll(){
+  loadEntries();
+  buildMatrix();
+  renderReport();
+  renderChart(chartSelector.value);
+}
+
+document.getElementById('clearData').addEventListener('click', ()=>{
+  if(confirm('Remove all data?')){
+    localStorage.removeItem(STORAGE_KEY);
+    entries=[]; saveEntries();
+    refreshAll();
+  }
+});
+chartSelector.addEventListener('change', refreshAll);
+categorySelector.addEventListener('change', e=>{
+  selectedCategory=e.target.value;
+  localStorage.setItem("lastCategory", selectedCategory);
+  refreshAll();
+});
+
+window.addEventListener('DOMContentLoaded', ()=>refreshAll());
+</script>
+</body>
+</html>
