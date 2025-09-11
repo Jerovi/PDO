@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CHED Report — Performance Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<!-- Chart.js and DataLabels -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<!-- PDF export libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  canvas { max-height: 380px; }
+  .small { font-size: 0.8rem; display:block; color:#475569; }
+  .fade-in { animation: fadeIn 0.7s ease-in-out; }
+  @keyframes fadeIn { from {opacity:0; transform:translateY(10px);} to {opacity:1; transform:translateY(0);} }
+</style>
+</head>
+<body class="bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300 min-h-screen p-6 text-slate-800">
+<main class="max-w-6xl mx-auto space-y-6">
+
+  <h1 class="text-4xl font-extrabold text-center mb-4 text-indigo-700 drop-shadow-lg">📊 PERFORMANCE REVIEW REPORT</h1>
+
+  <!-- Action buttons -->
+  <div class="flex flex-wrap gap-3 justify-center mb-4">
+    <button id="backBtn" class="bg-gray-700 hover:bg-gray-800 text-white px-4 py-2 rounded-2xl shadow-md transition">⬅ Back</button>
+    <button id="downloadPDF" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-2xl shadow-md transition">📥 Download PDF</button>
+    <button id="clearData" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-2xl shadow-md transition">🗑 Clear All</button>
+    <div id="status" class="text-sm text-slate-600 ml-2 self-center">No data</div>
+  </div>
+
+  <!-- Category selector -->
+  <div class="flex flex-col items-center mb-4 fade-in">
+    <label for="categorySelector" class="text-lg font-semibold mb-2 flex items-center text-slate-700">
+      🎯 Select Category:
+    </label>
+    <select id="categorySelector" 
+      class="px-6 py-3 text-white bg-teal-600 rounded-xl shadow-md font-semibold text-base hover:bg-teal-700 transition focus:outline-none focus:ring-4 focus:ring-teal-400">
+      <option value="all">All Categories</option>
+      <option value="Higher Education">Higher Education</option>
+      <option value="Research Program">Research Program</option>
+      <option value="Extension Services">Extension Services</option>
+    </select>
+  </div>
+
+  <!-- Table -->
+  <section id="reportContent" class="bg-white/80 backdrop-blur-lg p-6 rounded-2xl shadow-xl fade-in">
+    <h2 class="text-xl font-semibold mb-3 text-slate-700">📋 Data Report</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full border text-sm text-center rounded-xl overflow-hidden">
+        <thead class="bg-indigo-100 text-slate-700">
+          <tr>
+            <th class="p-2 border">Indicator</th>
+            <th class="p-2 border">Q1</th>
+            <th class="p-2 border">Q2</th>
+            <th class="p-2 border">Q3</th>
+            <th class="p-2 border">Q4</th>
+            <th class="p-2 border">Total</th>
+            <th class="p-2 border">Overall</th>
+          </tr>
+        </thead>
+        <tbody id="reportTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Chart -->
+  <section class="bg-white/80 backdrop-blur-lg p-6 rounded-2xl shadow-xl fade-in">
+    <div class="flex flex-col items-center mb-4">
+      <label for="chartSelector" class="text-lg font-semibold mb-2 flex items-center text-slate-700">
+        📊 Select Report View:
+      </label>
+      <select id="chartSelector" 
+        class="px-6 py-3 text-white bg-indigo-600 rounded-xl shadow-md font-semibold text-base hover:bg-indigo-700 transition focus:outline-none focus:ring-4 focus:ring-indigo-400">
+        <option value="overall">Overall Performance</option>
+        <option value="Q1">Quarter 1</option>
+        <option value="Q2">Quarter 2</option>
+        <option value="Q3">Quarter 3</option>
+        <option value="Q4">Quarter 4</option>
+      </select>
+    </div>
+    <div style="height:380px;">
+      <canvas id="dynamicChart" aria-label="Performance chart" role="img"></canvas>
+    </div>
+  </section>
+</main>
+
+<script>  
+Chart.register(ChartDataLabels);
+
+const STORAGE_KEY = 'chedData';
+const INDICATORS_BY_CATEGORY = {
+  "Higher Education": ["Licensure", "Employability", "CHED-RDC", "Accreditation"],
+  "Research Program": ["OC1-Research Utilization","OP1-Complete Research","OP2-Research Publish"],
+  "Extension Services": ["OC1-Number of Active Partnership","OP1-Number of Trainees","OP2-Number of Extension Programs","OP3-Satisfactory Rating"]
+};
+const DEFAULT_SETTINGS = { decimals: 1 };
+
+let entries = [];
+let matrix = {};
+let settings = DEFAULT_SETTINGS;
+let dynamicChart = null;
+
+const reportTable = document.getElementById('reportTable');
+const statusEl = document.getElementById('status');
+const chartSelector = document.getElementById('chartSelector');
+const categorySelector = document.getElementById('categorySelector');
+
+let selectedCategory = localStorage.getItem("lastCategory") || 'all';
+categorySelector.value = selectedCategory;
+
+const safeParse = s => { try { return JSON.parse(s); } catch(e) { return []; } };
+const showStatus = t => { statusEl.innerHTML = t; };
+
+function loadEntries() { entries = safeParse(localStorage.getItem(STORAGE_KEY)); return entries; }
+function saveEntries() { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); }
+
+function buildMatrix() {
+  matrix = {};
+  const indicators = selectedCategory === "all" 
+    ? Object.values(INDICATORS_BY_CATEGORY).flat() 
+    : INDICATORS_BY_CATEGORY[selectedCategory] || [];
+  
+  indicators.forEach(ind => { matrix[ind] = {Q1:{}, Q2:{}, Q3:{}, Q4:{}}; });
+
+  entries.filter(e => selectedCategory === 'all' || e.category === selectedCategory).forEach(e => {
+    if (!matrix[e.indicator]) matrix[e.indicator] = {Q1:{}, Q2:{}, Q3:{}, Q4:{}}; 
+    matrix[e.indicator][e.quarter] = {
+      target: e.targetWhole && e.targetWhole > 0 ? e.targetWhole : (e.target + "/" + e.targetDenom),
+      accomp: e.accompWhole && e.accompWhole > 0 ? e.accompWhole : (e.accomp + "/" + e.accompDenom)
+    };
+  });
+
+  return matrix;
+}
+
+function formatValue(val){
+  if(typeof val==="string" && val.includes("/")){
+    const [num, den] = val.split("/").map(Number);
+    if(den>0){
+      const pct = (num/den*100).toFixed(settings.decimals)+"%";
+      return `${pct}<br><span class="small">(${num}/${den})</span>`;
+    }
+    return "-";
+  }
+  if(!isNaN(val)) return val;
+  return "-";
+}
+
+function computeTotal(values){
+  if(!values.length) return "-";
+  if(typeof values[0]==="string" && values[0].includes("/")){
+    const nums = values.map(v=>{const [n,d]=v.split("/").map(Number); return d>0?n/d*100:0;});
+    const avg = nums.reduce((a,b)=>a+b,0)/nums.length;
+    return avg.toFixed(settings.decimals)+"%";
+  } else {
+    return values.map(Number).reduce((a,b)=>a+b,0);
+  }
+}
+
+function renderReport() {
+  reportTable.innerHTML = '';
+  const inds = Object.keys(matrix);
+
+  inds.forEach(ind => {
+    const t = matrix[ind];
+    const valuesTarget = ['Q1','Q2','Q3','Q4'].map(q=>t[q].target).filter(v=>v);
+    const valuesAccomp = ['Q1','Q2','Q3','Q4'].map(q=>t[q].accomp).filter(v=>v);
+
+    const totalTarget = computeTotal(valuesTarget);
+    const totalAccomp = computeTotal(valuesAccomp);
+
+    const header = document.createElement('tr');
+    header.className='bg-indigo-50 font-semibold';
+    header.innerHTML = `<td class="p-2" colspan="7">${ind}</td>`;
+    reportTable.appendChild(header);
+
+    const trT = document.createElement('tr');
+    trT.innerHTML=`
+      <td class="border p-2">Target</td>
+      <td class="border p-2">${formatValue(t.Q1.target)}</td>
+      <td class="border p-2">${formatValue(t.Q2.target)}</td>
+      <td class="border p-2">${formatValue(t.Q3.target)}</td>
+      <td class="border p-2">${formatValue(t.Q4.target)}</td>
+      <td class="border p-2">${totalTarget}</td>
+      <td class="border p-2">${totalTarget}</td>
+    `;
+    reportTable.appendChild(trT);
+
+    const trA = document.createElement('tr');
+    trA.innerHTML=`
+      <td class="border p-2">Accomplishment</td>
+      <td class="border p-2">${formatValue(t.Q1.accomp)}</td>
+      <td class="border p-2">${formatValue(t.Q2.accomp)}</td>
+      <td class="border p-2">${formatValue(t.Q3.accomp)}</td>
+      <td class="border p-2">${formatValue(t.Q4.accomp)}</td>
+      <td class="border p-2">${totalAccomp}</td>
+      <td class="border p-2">${totalAccomp}</td>
+    `;
+    reportTable.appendChild(trA);
+  });
+
+  showStatus(entries.length?`${entries.length} row(s)`:'No data');
+}
+
+function renderChart(view='overall') {
+  if(dynamicChart){ dynamicChart.destroy(); dynamicChart=null; }
+
+  const ctx = document.getElementById('dynamicChart').getContext('2d');
+  const labels = Object.keys(matrix);
+  const datasets = [];
+
+  function toPercent(v){
+    if(typeof v==="string" && v.includes("/")){
+      const [num, den] = v.split("/").map(Number);
+      return den > 0 ? (num/den*100) : 0;
+    }
+    if(typeof v==="string" && v.includes("%")){
+      return parseFloat(v);
+    }
+    return Number(v) || 0;
+  }
+
+  if(view==='overall'){
+    const targetData=[], accomData=[], colors=[];
+    labels.forEach(ind=>{
+      const t=matrix[ind];
+      let totalTarget = computeTotal(['Q1','Q2','Q3','Q4'].map(q=>t[q].target).filter(v=>v));
+      let totalAccomp = computeTotal(['Q1','Q2','Q3','Q4'].map(q=>t[q].accomp).filter(v=>v));
+      let tVal = toPercent(totalTarget);
+      let aVal = toPercent(totalAccomp);
+
+      targetData.push(tVal);
+      accomData.push(aVal);
+      colors.push(aVal >= tVal ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)");
+    });
+
+    datasets.push({label:'Target', data:targetData, backgroundColor:'rgba(59,130,246,0.8)', borderRadius:8});
+    datasets.push({label:'Accomplishment', data:accomData, backgroundColor:colors, borderRadius:8});
+  } else {
+    const targetData=[], accomData=[], colors=[];
+    labels.forEach(ind=>{
+      const t=matrix[ind];
+      let tVal = toPercent(t[view]?.target);
+      let aVal = toPercent(t[view]?.accomp);
+      targetData.push(tVal);
+      accomData.push(aVal);
+      colors.push(aVal >= tVal ? "rgba(16,185,129,0.9)" : "rgba(239,68,68,0.9)");
+    });
+
+    datasets.push({label:'Target', data:targetData, backgroundColor:'rgba(59,130,246,0.8)', borderRadius:8});
+    datasets.push({label:'Accomplishment', data:accomData, backgroundColor:colors, borderRadius:8});
+  }
+
+  dynamicChart = new Chart(ctx, {
+    type:'bar',
+    data:{labels:labels, datasets:datasets},
+    options:{
+      responsive:true,
+      maintainAspectRatio:false,
+      animation:{duration:1200, easing:'easeOutQuart'},
+      plugins:{
+        legend:{position:'top', labels:{font:{weight:'bold'}}},
+        datalabels:{
+          display:true,
+          color:'#111',
+          font:{weight:'bold'},
+          formatter:(val, context)=>{
+            const ind=Object.values(matrix)[context.dataIndex];
+            let raw="";
+            if(view==='overall'){
+              const quartersData=['Q1','Q2','Q3','Q4'].map(q=>ind[q].accomp).filter(v=>v);
+              raw = quartersData[0] || val;
+            } else {
+              raw = ind[view]?.accomp || val;
+            }
+            if(typeof raw==="string" && raw.includes("/")){
+              const [num, den] = raw.split("/").map(Number);
+              return `${val.toFixed(settings.decimals)}%\n(${num}/${den})`;
+            }
+            return `${val.toFixed(settings.decimals)}%`;
+          }
+        }
+      },
+      scales:{
+        y:{
+          beginAtZero:true,
+          title:{display:true, text:"Percentage (%)", color:'#475569'},
+          grid:{color:'rgba(148,163,184,0.3)'}
+        },
+        x:{grid:{display:false}}
+      }
+    },
+    plugins:[ChartDataLabels]
+  });
+}
+
+function refreshAll(){
+  loadEntries();
+  buildMatrix();
+  renderReport();
+  renderChart(chartSelector.value);
+}
+
+// Event listeners
+document.getElementById('clearData').addEventListener('click', ()=>{
+  if(confirm('Remove all data?')){
+    localStorage.removeItem(STORAGE_KEY);
+    entries=[]; saveEntries();
+    refreshAll();
+  }
+});
+
+document.getElementById('backBtn').addEventListener('click', () => {
+  window.location.href = '1trial.html';
+});
+
+chartSelector.addEventListener('change', refreshAll);
+categorySelector.addEventListener('change', e=>{
+  selectedCategory=e.target.value;
+  localStorage.setItem("lastCategory", selectedCategory);
+  refreshAll();
+});
+
+window.addEventListener('DOMContentLoaded', ()=>refreshAll());
+
+// Download PDF (table + chart, multi-page)
+document.getElementById('downloadPDF').addEventListener('click', async () => {
+  const reportEl = document.getElementById('reportContent');
+  const chartEl = document.getElementById('dynamicChart');
+  const { jsPDF } = window.jspdf;
+
+  const pdf = new jsPDF('p', 'pt', 'a4');
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 20;
+  let currentPage = 1;
+
+  const now = new Date();
+  const formattedDate = now.toLocaleString('en-PH', { 
+    year: 'numeric', month: 'short', day: 'numeric', 
+    hour: '2-digit', minute: '2-digit' 
+  });
+
+  const addHeader = (pageNum) => {
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(40);
+    pdf.text(`CHED Performance Report — Page ${pageNum}`, margin, 15);
+    pdf.text(`Generated: ${formattedDate}`, pageWidth - margin - 150, 15);
+  };
+
+  const reportCanvas = await html2canvas(reportEl, { scale: 2 });
+  const reportImgData = reportCanvas.toDataURL('image/png');
+  const chartImgData = chartEl.toDataURL('image/png');
+
+  const addImageMultiPage = (imgData, imgWidth, imgHeight, startY = margin) => {
+    let remainingHeight = imgHeight;
+    let positionY = startY;
+
+    while (remainingHeight > 0) {
+      addHeader(currentPage);
+
+      const renderHeight = Math.min(remainingHeight, pageHeight - 2 * margin - 20);
+      pdf.addImage(
+        imgData,
+        'PNG',
+        margin,
+        positionY + 20,
+        imgWidth,
+        renderHeight,
+        undefined,
+        'FAST'
+      );
+
+      remainingHeight -= renderHeight;
+      if (remainingHeight > 0) {
+        pdf.addPage();
+        currentPage++;
+        positionY = margin;
+      }
+    }
+  };
+
+  const reportHeight = (reportCanvas.height * (pageWidth - 2 * margin)) / reportCanvas.width;
+  const chartHeight = (chartEl.height * (pageWidth - 2 * margin)) / chartEl.width;
+
+  addImageMultiPage(reportImgData, pageWidth - 2 * margin, reportHeight);
+
+  if (reportHeight + margin * 2 > pageHeight) {
+    pdf.addPage();
+    currentPage++;
+  }
+
+  addImageMultiPage(chartImgData, pageWidth - 2 * margin, chartHeight, margin);
+
+  pdf.save('CHED_Report.pdf');
+});
+</script>
+</body>
+</html>
