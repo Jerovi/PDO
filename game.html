@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>CHED Report — Improved (Single Chart)</title>
+<title>CHED Report — Master (CHED + Research + Extension Services)</title>
 <script src="https://cdn.tailwindcss.com"></script>
 
 <!-- Chart.js and DataLabels -->
@@ -14,313 +14,169 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-<style>
-  canvas { max-height: 360px; }
-  .small { font-size: 0.85rem; }
-</style>
+<link rel="stylesheet" href="style.css" />
 </head>
 <body class="bg-slate-50 min-h-screen p-6 text-slate-800">
-<main class="max-w-6xl mx-auto">
-  <h1 class="text-3xl font-bold text-center mb-4">ACCOMPLISHMENT OF HIGHER EDUCATION — 2025</h1>
+  <main class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold text-center mb-4">ACCOMPLISHMENT OF HIGHER EDUCATION — MASTER</h1>
 
-  <div class="flex flex-wrap gap-3 justify-center mb-4">
-    <button id="backBtn" class="bg-gray-600 text-white px-3 py-2 rounded" aria-label="Back">⬅ Back</button>
-    <button id="downloadPDF" class="bg-blue-600 text-white px-3 py-2 rounded" aria-label="Download PDF">📥 Download PDF</button>
-    <button id="clearData" class="bg-red-600 text-white px-3 py-2 rounded">🗑 Clear All</button>
-    <div id="status" class="text-sm text-slate-600 ml-2 self-center">No data</div>
+    <div class="flex flex-wrap gap-3 justify-center mb-4 items-center">
+      <button id="backBtn" class="bg-gray-600 text-white px-3 py-2 rounded" aria-label="Back">⬅ Back</button>
+
+      <div class="dataset-select rounded-lg px-3 py-2 flex items-center gap-3">
+        <label for="datasetSelector" class="font-medium">Dataset</label>
+        <select id="datasetSelector" class="px-4 py-2 rounded-md bg-white border">
+          <option value="ched">Higher Education</option>
+          <option value="research">Research Program</option>
+          <option value="extension">Extension Services</option>
+        </select>
+        <button id="manageDataBtn" class="ml-2 bg-indigo-600 text-white px-3 py-1 rounded">Manage Data</button>
+      </div>
+
+      <!-- Dropdown for PDF Export -->
+      <div class="relative dropdown">
+        <button id="dropdownBtn" class="bg-blue-600 text-white px-3 py-2 rounded inline-flex items-center" aria-haspopup="true" aria-expanded="false" type="button">
+          📥 Download PDF ▼
+        </button>
+        <ul id="dropdownMenu" class="absolute dropdown-menu bg-white shadow-lg rounded mt-1 w-56 right-0 z-50" role="menu" aria-hidden="true">
+          <li role="none"><button id="downloadCurrentPDF" class="block px-4 py-2 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none text-left w-full" role="menuitem" tabindex="-1">Download Current Dataset</button></li>
+          <li role="none"><button id="downloadAllPDF" class="block px-4 py-2 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none text-left w-full" role="menuitem" tabindex="-1">Download All Datasets</button></li>
+        </ul>
+      </div>
+
+      <button id="clearData" class="bg-red-600 text-white px-3 py-2 rounded">🗑 Clear Current Dataset</button>
+      <div id="status" class="text-sm text-slate-600 ml-2 self-center">No data</div>
+    </div>
+
+    <!-- Table -->
+    <section id="reportContent" class="bg-white p-6 rounded-xl shadow mb-6">
+      <div class="overflow-x-auto">
+        <table class="w-full border text-sm text-center">
+          <thead class="bg-slate-100">
+            <tr>
+              <th class="p-2 border">Indicator</th>
+              <th class="p-2 border">Q1</th>
+              <th class="p-2 border">Q2</th>
+              <th class="p-2 border">Q3</th>
+              <th class="p-2 border">Q4</th>
+              <th class="p-2 border">Total</th>
+              <th class="p-2 border">Percentage (%)</th>
+              <th class="p-2 border">Remarks</th>
+            </tr>
+          </thead>
+          <tbody id="reportTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Two Charts: percentChart (percentages) and wholeChart (raw counts) -->
+    <section class="bg-white p-4 rounded-xl shadow mb-6">
+      <div class="flex flex-col items-center mb-4">
+        <label for="chartSelector" class="text-lg font-semibold mb-2 flex items-center">
+          📊 Select Report View:
+        </label>
+        <select id="chartSelector"
+          class="px-5 py-3 text-white bg-indigo-600 rounded-lg shadow-md font-semibold text-base hover:bg-indigo-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          <option value="overall">Overall Performance</option>
+          <option value="Q1">Quarter 1</option>
+          <option value="Q2">Quarter 2</option>
+          <option value="Q3">Quarter 3</option>
+          <option value="Q4">Quarter 4</option>
+        </select>
+      </div>
+
+      <div id="chartWrap" class="chart-wrap">
+        <!-- Percent chart (shows % style indicators). Hidden for extension/research when there are no percent indicators -->
+        <canvas id="percentChart" aria-label="Percentage chart" role="img" style="display:block; width:100%; height:260px;"></canvas>
+
+        <!-- Whole-number chart (shows raw counts). Hidden when no whole-number indicators) -->
+        <canvas id="wholeChart" aria-label="Whole number chart" role="img" style="display:block; width:100%; height:260px; margin-top:24px;"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" style="display:none;" class="overlay">
+    <div class="bg-white p-6 rounded-xl shadow-lg text-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+      <p class="text-lg font-semibold">Generating PDF...</p>
+      <p class="text-sm text-gray-600">Please wait, this may take a moment.</p>
+    </div>
   </div>
 
-  <!-- Category selector -->
-  <div class="flex flex-col items-center mb-4">
-    <label for="categorySelector" class="text-lg font-semibold mb-2 flex items-center">
-      🎯 Select Category:
-    </label>
-    <select id="categorySelector" 
-      class="px-5 py-3 text-white bg-teal-600 rounded-lg shadow-md font-semibold text-base hover:bg-teal-700 transition focus:outline-none focus:ring-2 focus:ring-teal-400">
-      <option value="all">All Categories</option>
-      <option value="Higher Education">Higher Education</option>
-      <option value="Research Program">Research Program</option>
-      <option value="Extension Services">Extension Services</option>
-    </select>
+  <!-- Manage Data Overlay -->
+  <div id="manageOverlay" style="display:none;" class="overlay">
+    <div class="bg-white rounded-xl p-6 w-full max-w-2xl shadow-lg">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-semibold">Manage Dataset — <span id="manageDatasetName"></span></h3>
+        <div class="flex gap-2">
+          <button id="seedDataset" class="bg-emerald-600 text-white px-3 py-1 rounded" aria-label="Seed sample data">Seed Sample</button>
+          <button id="closeManage" class="bg-gray-300 px-3 py-1 rounded" aria-label="Close manage overlay">Close</button>
+        </div>
+      </div>
+
+      <!-- Entry form -->
+      <form id="entryForm" class="grid grid-cols-2 gap-3 mb-4">
+        <input type="hidden" id="entryId" />
+        <label class="col-span-2">
+          Indicator (choose or 'Other')
+          <div class="flex gap-2">
+            <select id="indicatorSelect" class="flex-1 border rounded p-2">
+              <!-- options populated by JS to keep consistent -->
+            </select>
+            <input id="indicatorOther" class="flex-1 border rounded p-2" placeholder="Type custom indicator (shows when 'Other' selected)" style="display:none;" />
+          </div>
+        </label>
+
+        <label>
+          Quarter
+          <select id="quarterInput" class="w-full border rounded p-2">
+            <option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option>
+          </select>
+        </label>
+
+        <label id="targetLabel">
+          Target (num)
+          <input id="targetInput" type="number" min="0" class="w-full border rounded p-2" />
+        </label>
+
+        <label id="targetDenomLabel">
+          Target Denominator
+          <input id="targetDenomInput" type="number" min="0" class="w-full border rounded p-2" />
+        </label>
+
+        <label id="accompLabel">
+          Accomplishment (num)
+          <input id="accompInput" type="number" min="0" class="w-full border rounded p-2" />
+        </label>
+
+        <label id="accompDenomLabel">
+          Accomplishment Denominator
+          <input id="accompDenomInput" type="number" min="0" class="w-full border rounded p-2" />
+        </label>
+
+        <label class="col-span-2">
+          Remarks
+          <input id="remarksInput" class="w-full border rounded p-2" placeholder="Add remarks here (optional)" />
+        </label>
+
+        <div class="col-span-2 flex gap-3 justify-end">
+          <button type="button" id="saveEntryBtn" class="bg-indigo-600 text-white px-4 py-2 rounded">Save</button>
+        </div>
+      </form>
+
+      <!-- Entries list -->
+      <div class="overflow-auto max-h-60">
+        <table class="w-full text-sm text-left">
+          <thead class="text-xs text-slate-600">
+            <tr><th>id</th><th>Indicator</th><th>Q</th><th>Target</th><th>Accomp</th><th>Remarks</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="entriesList"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
-  <!-- Table -->
-  <section id="reportContent" class="bg-white p-6 rounded-xl shadow mb-6">
-    <div class="overflow-x-auto">
-      <table class="w-full border text-sm text-center">
-        <thead class="bg-slate-100">
-          <tr>
-            <th class="p-2 border">Indicator</th>
-            <th class="p-2 border">Q1</th>
-            <th class="p-2 border">Q2</th>
-            <th class="p-2 border">Q3</th>
-            <th class="p-2 border">Q4</th>
-            <th class="p-2 border">Total</th>
-            <th class="p-2 border">Percentage (%)</th>
-          </tr>
-        </thead>
-        <tbody id="reportTable"></tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- Single Chart -->
-  <section class="bg-white p-4 rounded-xl shadow mb-6">
-    <div class="flex flex-col items-center mb-4">
-      <label for="chartSelector" class="text-lg font-semibold mb-2 flex items-center">
-        📊 Select Report View:
-      </label>
-      <select id="chartSelector" 
-        class="px-5 py-3 text-white bg-indigo-600 rounded-lg shadow-md font-semibold text-base hover:bg-indigo-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-400">
-        <option value="overall">Overall Performance</option>
-        <option value="Q1">Quarter 1</option>
-        <option value="Q2">Quarter 2</option>
-        <option value="Q3">Quarter 3</option>
-        <option value="Q4">Quarter 4</option>
-      </select>
-    </div>
-    <div style="height:360px;">
-      <canvas id="dynamicChart" aria-label="Performance chart" role="img"></canvas>
-    </div>
-  </section>
-
-</main>
-
-<script>
-Chart.register(ChartDataLabels);
-
-const STORAGE_KEY = 'chedData';
-
-const INDICATORS_BY_CATEGORY = {
-  "Higher Education": ["Licensure", "Employability", "CHED-RDC", "Accreditation"],
-  "Research Program": ["OC1-Research Utilization","OP1-Complete Research","OP2-Research Publish"],
-  "Extension Services": ["OC1-Number of active Partnership","OP1-Number of Trainees","OP2-Number of Extension Programs","OP3-Satisfactory Rating"]
-};
-
-const DEFAULT_SETTINGS = { tolerance: 0.5, decimals: 1, chartMaxY: 120 };
-
-let entries = [];
-let matrix = {};
-let settings = DEFAULT_SETTINGS;
-let dynamicChart = null;
-
-const reportTable = document.getElementById('reportTable');
-const statusEl = document.getElementById('status');
-const downloadPDFBtn = document.getElementById('downloadPDF');
-const clearDataBtn = document.getElementById('clearData');
-const chartSelector = document.getElementById('chartSelector');
-const backBtn = document.getElementById('backBtn');
-const categorySelector = document.getElementById('categorySelector');
-
-let selectedCategory = localStorage.getItem("lastCategory") || 'all';
-categorySelector.value = selectedCategory;
-
-const safeParse = (s)=> { try { return JSON.parse(s); } catch(e) { return null; } };
-const showStatus = (t)=> { statusEl.innerText = t; };
-
-function loadEntries() { entries = safeParse(localStorage.getItem(STORAGE_KEY)) || []; return entries; }
-function saveEntries() { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); }
-
-function computeTotalDenom(denomsObj, mode='auto') {
-  const vals = ['Q1','Q2','Q3','Q4'].map(q=>Number(denomsObj[q]||0)).filter(v=>v>0);
-  if (!vals.length) return 0;
-  if (mode === 'sum' || (mode === 'auto' && !vals.every(v=>v===vals[0]))) return vals.reduce((a,b)=>a+b,0);
-  if (mode === 'constant' || (mode === 'auto' && vals.every(v=>v===vals[0]))) return vals[0];
-  if (mode === 'max') return Math.max(...vals);
-  if (mode === 'average') return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
-  return vals.reduce((a,b)=>a+b,0);
-}
-
-function buildMatrix() {
-  matrix = {};
-  const indicators = selectedCategory === "all"
-    ? Object.values(INDICATORS_BY_CATEGORY).flat()
-    : INDICATORS_BY_CATEGORY[selectedCategory] || [];
-
-  indicators.forEach(ind => {
-    matrix[ind] = { targets:{Q1:0,Q2:0,Q3:0,Q4:0}, targetDenoms:{Q1:0,Q2:0,Q3:0,Q4:0}, accomps:{Q1:0,Q2:0,Q3:0,Q4:0}, accompDenoms:{Q1:0,Q2:0,Q3:0,Q4:0} };
-  });
-
-  entries.filter(e => selectedCategory === 'all' || e.category === selectedCategory).forEach(e => {
-    if (!matrix[e.indicator]) matrix[e.indicator] = { targets:{Q1:0,Q2:0,Q3:0,Q4:0}, targetDenoms:{Q1:0,Q2:0,Q3:0,Q4:0}, accomps:{Q1:0,Q2:0,Q3:0,Q4:0}, accompDenoms:{Q1:0,Q2:0,Q3:0,Q4:0} };
-    matrix[e.indicator].targets[e.quarter] = Number(e.target)||0;
-    matrix[e.indicator].targetDenoms[e.quarter] = Number(e.targetDenom)||0;
-    matrix[e.indicator].accomps[e.quarter] = Number(e.accomp)||0;
-    matrix[e.indicator].accompDenoms[e.quarter] = Number(e.accompDenom)||0;
-  });
-
-  return matrix;
-}
-
-function renderReport() {
-  reportTable.innerHTML = '';
-  const labels = [], overallTargets = [], overallAccomps = [];
-  const quarterlyTargets = {Q1:[],Q2:[],Q3:[],Q4:[]}, quarterlyAccomps = {Q1:[],Q2:[],Q3:[],Q4:[]};
-
-  const inds = Object.keys(matrix).length ? Object.keys(matrix) : (selectedCategory === "all" ? Object.values(INDICATORS_BY_CATEGORY).flat() : INDICATORS_BY_CATEGORY[selectedCategory] || []);
-
-  inds.forEach(ind => {
-    const t = matrix[ind];
-    const totalTarget = t.targets.Q1 + t.targets.Q2 + t.targets.Q3 + t.targets.Q4;
-    const totalAccomp = t.accomps.Q1 + t.accomps.Q2 + t.accomps.Q3 + t.accomps.Q4;
-    const totalTargetDenom = computeTotalDenom(t.targetDenoms);
-    const totalAccompDenom = computeTotalDenom(t.accompDenoms);
-    const overallTargetPct = totalTargetDenom ? (totalTarget/totalTargetDenom*100) : null;
-    const overallAccompPct = totalAccompDenom ? (totalAccomp/totalAccompDenom*100) : null;
-
-    const header = document.createElement('tr');
-    header.className = 'bg-slate-100 font-semibold';
-    header.innerHTML = `<td class="p-2" colspan="7">${ind}</td>`;
-    reportTable.appendChild(header);
-
-    const qCellsTarget = {}, qCellsAccomp = {};
-    ['Q1','Q2','Q3','Q4'].forEach(q => {
-      const numT = t.targets[q] || 0, denT = t.targetDenoms[q] || 0;
-      const pctT = denT ? (numT/denT*100).toFixed(settings.decimals)+'%' : '-';
-      qCellsTarget[q] = `<div>${pctT}</div><div class="small">(${numT}/${denT || '-'})</div>`;
-
-      const numA = t.accomps[q] || 0, denA = t.accompDenoms[q] || 0;
-      const pctA = denA ? (numA/denA*100).toFixed(settings.decimals)+'%' : '-';
-      qCellsAccomp[q] = `<div>${pctA}</div><div class="small">(${numA}/${denA || '-'})</div>`;
-    });
-
-    const totalTargetCell = totalTargetDenom ? `<div>${overallTargetPct.toFixed(settings.decimals)}%</div><div class="small">(${totalTarget}/${totalTargetDenom})</div>` : '-';
-    const totalAccompCell = totalAccompDenom ? `<div>${overallAccompPct.toFixed(settings.decimals)}%</div><div class="small">(${totalAccomp}/${totalAccompDenom})</div>` : '-';
-
-    const trT = document.createElement('tr'); 
-    trT.className='bg-white';
-    trT.innerHTML = `
-      <td class="border p-2">Target</td>
-      <td class="border p-2">${qCellsTarget.Q1}</td>
-      <td class="border p-2">${qCellsTarget.Q2}</td>
-      <td class="border p-2">${qCellsTarget.Q3}</td>
-      <td class="border p-2">${qCellsTarget.Q4}</td>
-      <td class="border p-2">${totalTargetCell}</td>
-      <td class="border p-2 font-semibold">${totalTargetCell}</td>
-    `;
-    reportTable.appendChild(trT);
-
-    const trA = document.createElement('tr');
-    const totalAccompClass = totalAccomp < totalTarget ? 'text-red-600' : 'text-green-600';
-    const overallClass = (overallAccompPct != null && overallTargetPct != null && (overallAccompPct + settings.tolerance >= overallTargetPct)) ? 'text-green-600' : 'text-red-600';
-    trA.innerHTML = `
-      <td class="border p-2">Accomplishment</td>
-      <td class="border p-2 ${t.accomps.Q1 < t.targets.Q1 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q1}</td>
-      <td class="border p-2 ${t.accomps.Q2 < t.targets.Q2 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q2}</td>
-      <td class="border p-2 ${t.accomps.Q3 < t.targets.Q3 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q3}</td>
-      <td class="border p-2 ${t.accomps.Q4 < t.targets.Q4 ? 'text-red-600 font-bold':'text-green-600 font-bold'}">${qCellsAccomp.Q4}</td>
-      <td class="border p-2 font-bold ${totalAccompClass}">${totalAccompCell}</td>
-      <td class="border p-2 font-bold ${overallClass}">${totalAccompCell}</td>
-    `;
-    reportTable.appendChild(trA);
-
-    labels.push(ind);
-    overallTargets.push(overallTargetPct == null ? 0 : Number(overallTargetPct.toFixed(settings.decimals+1)));
-    overallAccomps.push(overallAccompPct == null ? 0 : Number(overallAccompPct.toFixed(settings.decimals+1)));
-
-    ['Q1','Q2','Q3','Q4'].forEach(q => {
-      const tq = t.targetDenoms[q] ? (t.targets[q]/t.targetDenoms[q]*100) : 0;
-      const aq = t.accompDenoms[q] ? (t.accomps[q]/t.accompDenoms[q]*100) : 0;
-      quarterlyTargets[q].push(Number(tq.toFixed(settings.decimals+1)));
-      quarterlyAccomps[q].push(Number(aq.toFixed(settings.decimals+1)));
-    });
-  });
-
-  matrix._chartData = { labels, overallTargets, overallAccomps, quarterlyTargets, quarterlyAccomps };
-  showStatus(entries.length ? `${entries.length} row(s)` : 'No data');
-}
-
-function baseChartOptions() {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { position: 'top' },
-      tooltip: { enabled: true },
-      datalabels: {
-        display: true,             // Show labels
-        color: 'black',            // Label color
-        font: { weight: 'bold', size: 12 },
-        formatter: (value) => value.toFixed(settings.decimals) + '%', // Format as percentage
-        anchor: 'end',             // Position label on top of bar
-        align: 'end'
-      }
-    },
-    scales: {
-      x: { ticks: { maxRotation: 0, minRotation: 0, autoSkip: false } },
-      y: { beginAtZero: true, max: settings.chartMaxY, ticks: { callback: v => v + '%' } }
-    }
-  };
-}
-
-function renderChartInstance(ctx, labels, targetArr, accompArr, accompColors) {
-  return new Chart(ctx,{ type:'bar', data:{ labels, datasets:[{ label:'Target %', data:targetArr, backgroundColor:'rgba(30,64,175,0.9)'},{ label:'Accomplishment %', data:accompArr, backgroundColor:accompColors}] }, options: baseChartOptions() });
-}
-
-function renderDynamicChart(view) {
-  if (!matrix._chartData) return;
-  const labels = matrix._chartData.labels;
-  let tData = view==='overall'?matrix._chartData.overallTargets:matrix._chartData.quarterlyTargets[view];
-  let aData = view==='overall'?matrix._chartData.overallAccomps:matrix._chartData.quarterlyAccomps[view];
-  const colors = aData.map((v,i)=>v+settings.tolerance>=(tData[i]||0)?'rgba(34,197,94,0.85)':'rgba(239,68,68,0.85)');
-  if(dynamicChart){ try{dynamicChart.destroy();}catch(e){} dynamicChart=null; }
-  const ctx=document.getElementById('dynamicChart').getContext('2d');
-  dynamicChart=renderChartInstance(ctx,labels,tData,aData,colors);
-}
-
-function refreshAll() {
-  loadEntries();
-  buildMatrix();
-  renderReport();
-  renderDynamicChart(chartSelector.value||'overall');
-}
-
-function clearAll(){ if(!confirm('Remove all data?'))return; localStorage.removeItem(STORAGE_KEY); entries=[]; saveEntries(); refreshAll(); }
-
-async function exportPDF() {
-  const { jsPDF } = window.jspdf;
-
-  // Create a new jsPDF instance
-  const pdf = new jsPDF('p', 'pt', 'a4');
-  const reportContent = document.getElementById('reportContent');
-  const chartCanvas = document.getElementById('dynamicChart');
-
-  // Capture the table
-  const tableCanvas = await html2canvas(reportContent, { scale: 2 });
-  const tableImg = tableCanvas.toDataURL('image/png');
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  let y = 20; // top margin
-  pdf.text("Accomplishment of Higher Education — 2025", pageWidth / 2, y, { align: 'center' });
-  y += 30;
-  const tableWidth = pageWidth - 40; // side margins
-  const tableHeight = (tableCanvas.height / tableCanvas.width) * tableWidth;
-  pdf.addImage(tableImg, 'PNG', 20, y, tableWidth, tableHeight);
-
-  // Capture the chart
-  const chartCanvasImg = await html2canvas(chartCanvas, { scale: 2 });
-  const chartImg = chartCanvasImg.toDataURL('image/png');
-  y += tableHeight + 20;
-  const chartHeight = (chartCanvasImg.height / chartCanvasImg.width) * tableWidth;
-
-  // Add new page if chart doesn't fit
-  if (y + chartHeight > pdf.internal.pageSize.getHeight()) {
-    pdf.addPage();
-    y = 20;
-  }
-  pdf.addImage(chartImg, 'PNG', 20, y, tableWidth, chartHeight);
-
-  // Save the PDF
-  pdf.save('CHED_Report_2025.pdf');
-}
-
-
-chartSelector.addEventListener('change', e=>renderDynamicChart(e.target.value));
-downloadPDFBtn.addEventListener('click', exportPDF);
-clearDataBtn.addEventListener('click', clearAll);
-backBtn.addEventListener('click', ()=>window.location.href='pdo.html');
-categorySelector.addEventListener('change', e=>{ selectedCategory=e.target.value; localStorage.setItem("lastCategory", selectedCategory); refreshAll(); });
-
-window.addEventListener('DOMContentLoaded', () => { selectedCategory = categorySelector.value; refreshAll(); });
-</script>
+<script  src="script.plugin_fixed.js"></script>
 </body>
 </html>
